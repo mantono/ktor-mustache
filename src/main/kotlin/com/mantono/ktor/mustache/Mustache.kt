@@ -5,14 +5,25 @@ import com.github.mustachejava.MustacheFactory
 import io.ktor.application.ApplicationCall
 import io.ktor.application.ApplicationCallPipeline
 import io.ktor.application.ApplicationFeature
+import io.ktor.http.ContentType
+import io.ktor.http.content.ByteArrayContent
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.withCharset
 import io.ktor.response.ApplicationSendPipeline
 import io.ktor.util.AttributeKey
+import io.ktor.util.cio.use
 import io.ktor.util.pipeline.PipelineContext
+import kotlinx.coroutines.io.ByteWriteChannel
+import kotlinx.coroutines.io.writeAvailable
+import kotlinx.coroutines.io.writeFully
+import mu.KotlinLogging
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.Writer
+
+private val log = KotlinLogging.logger(Mustache::class.qualifiedName.toString())
 
 class Mustache(configuration: Configuration) {
 
@@ -36,6 +47,8 @@ class Mustache(configuration: Configuration) {
 				}
 				field = value
 			}
+
+		var defaultContentType: ContentType = ContentType.Text.Html.withCharset(Charsets.UTF_8)
 	}
 
 	companion object Feature : ApplicationFeature<ApplicationCallPipeline, Mustache.Configuration, Mustache> {
@@ -44,26 +57,44 @@ class Mustache(configuration: Configuration) {
 		override fun install(pipeline: ApplicationCallPipeline, configure: Configuration.() -> Unit): Mustache {
 			val configuration = Mustache.Configuration().apply(configure)
 			val feature = Mustache(configuration)
+			log(configuration)
 
 			pipeline.sendPipeline.intercept(ApplicationSendPipeline.Transform) { content ->
 				if(content is MustacheContent) {
-					this.transform(content, configuration, feature)
+					val transformed: OutgoingContent = transform(content, configuration, feature)
+					proceedWith(transformed)
 				}
 			}
 			return feature
 		}
 
-		private suspend fun PipelineContext<Any, ApplicationCall>.transform(
+		private fun transform(
 			content: MustacheContent,
 			configuration: Configuration,
 			feature: Mustache
-		) {
-			val file: File = configuration.resources.resolve(content.file)
+		): OutgoingContent {
 
-			ByteArrayOutputStream(configuration.bufferSize).use { stream: OutputStream ->
-				val writer: Writer = OutputStreamWriter(stream)
-				feature.mustacheFactory.compile(file.canonicalPath).execute(writer, content.vars)
-				proceedWith(stream)
+			ByteArrayOutputStream(configuration.bufferSize).use { bytesStream ->
+				val writer: Writer = OutputStreamWriter(bytesStream)
+				feature.mustacheFactory.compile(content.file).execute(writer, content.vars).flush()
+				return object : OutgoingContent.WriteChannelContent() {
+					override suspend fun writeTo(channel: ByteWriteChannel) {
+						channel.writeAvailable(bytesStream.toByteArray())
+					}
+					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
+					override val contentLength: Long = bytesStream.toByteArray().size.toLong()
+				}
+			}
+		}
+
+		private fun log(configuration: Configuration) {
+			val found: List<File> = configuration.resources
+				.listFiles { _, name -> name.endsWith(".mustache") }
+				.toList()
+			if(found.isEmpty()) {
+				log.warn { "Found no mustache templates in ${configuration.resources}" }
+			} else {
+				log.info { "Found templates: ${found.joinToString(separator = "\n") { it.canonicalPath }}" }
 			}
 		}
 	}
