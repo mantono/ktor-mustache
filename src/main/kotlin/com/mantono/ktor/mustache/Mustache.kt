@@ -90,7 +90,7 @@ class Mustache(configuration: Configuration) {
 		private fun log(configuration: Configuration) {
 			val found: List<File> = configuration.resources
 				.listFiles { _, name -> name.endsWith(".mustache") }
-				.toList()
+				?.toList() ?: emptyList()
 			if(found.isEmpty()) {
 				log.warn { "Found no mustache templates in ${configuration.resources}" }
 			} else {
