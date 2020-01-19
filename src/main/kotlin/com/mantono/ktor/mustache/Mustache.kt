@@ -13,9 +13,8 @@ import io.ktor.response.ApplicationSendPipeline
 import io.ktor.util.AttributeKey
 import io.ktor.util.cio.use
 import io.ktor.util.pipeline.PipelineContext
-import kotlinx.coroutines.io.ByteWriteChannel
-import kotlinx.coroutines.io.writeAvailable
-import kotlinx.coroutines.io.writeFully
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeAvailable
 import mu.KotlinLogging
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -78,10 +77,11 @@ class Mustache(configuration: Configuration) {
 				val writer: Writer = OutputStreamWriter(bytesStream)
 				feature.mustacheFactory.compile(content.file).execute(writer, content.vars).flush()
 				return object : OutgoingContent.WriteChannelContent() {
+					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
 					override suspend fun writeTo(channel: ByteWriteChannel) {
 						channel.writeAvailable(bytesStream.toByteArray())
 					}
-					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
+
 					override val contentLength: Long = bytesStream.toByteArray().size.toLong()
 				}
 			}
