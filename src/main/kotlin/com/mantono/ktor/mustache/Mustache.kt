@@ -75,7 +75,10 @@ class Mustache(configuration: Configuration) {
 
 			ByteArrayOutputStream(configuration.bufferSize).use { bytesStream ->
 				val writer: Writer = OutputStreamWriter(bytesStream)
-				feature.mustacheFactory.compile(content.file).execute(writer, content.vars).flush()
+				val compiledFile: com.github.mustachejava.Mustache = feature.mustacheFactory.compile(content.file)
+					?: error("Unable to compile file ${content.file}")
+				compiledFile.execute(writer, content.vars).flush()
+
 				return object : OutgoingContent.WriteChannelContent() {
 					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
 					override suspend fun writeTo(channel: ByteWriteChannel) {
