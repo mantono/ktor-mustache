@@ -82,7 +82,14 @@ class Mustache(configuration: Configuration) {
 				return object : OutgoingContent.WriteChannelContent() {
 					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
 					override suspend fun writeTo(channel: ByteWriteChannel) {
-						channel.writeAvailable(bytesStream.toByteArray())
+						if(!channel.isClosedForWrite) {
+							channel.writeAvailable(bytesStream.toByteArray())
+							if(!channel.autoFlush) {
+								channel.flush()
+							}
+						} else {
+							log.error { "Unable to write to channel: ${channel.closedCause?.message ?: "channel closed"}" }
+						}
 					}
 
 					override val contentLength: Long = bytesStream.toByteArray().size.toLong()
