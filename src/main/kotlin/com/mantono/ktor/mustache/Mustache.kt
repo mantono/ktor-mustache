@@ -10,7 +10,8 @@ import io.ktor.http.withCharset
 import io.ktor.response.ApplicationSendPipeline
 import io.ktor.util.AttributeKey
 import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.writeAvailable
+import io.ktor.utils.io.close
+import kotlinx.coroutines.yield
 import mu.KotlinLogging
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
@@ -71,12 +72,13 @@ class Mustache(configuration: Configuration) {
 				?: error("Unable to compile file ${content.file}")
 
 			val byteStream = ByteArrayOutputStream(configuration.bufferSize)
-			val stream = BufferedOutputStream(byteStream)
+			val stream = BufferedOutputStream(byteStream, configuration.bufferSize)
 			val writer = OutputStreamWriter(stream)
 			compiledFile.execute(writer, content.vars)
 			writer.flush()
+			val contentLength: Long = byteStream.size().toLong()
 
-			return ContentPipe(byteStream, configuration.defaultContentType)
+			return ContentPipe(byteStream, configuration.defaultContentType, contentLength)
 		}
 
 		private fun log(configuration: Configuration) {
@@ -94,21 +96,32 @@ class Mustache(configuration: Configuration) {
 
 class ContentPipe(
 	private val buffer: ByteArray,
-	override val contentType: ContentType
+	override val contentType: ContentType,
+	override val contentLength: Long
 ): OutgoingContent.WriteChannelContent() {
+	private var totalWritten: Int = 0
 
-	constructor(stream: ByteArrayOutputStream, contentType: ContentType): this(stream.toByteArray(), contentType)
+	constructor(
+		stream: ByteArrayOutputStream,
+		contentType: ContentType,
+		contentLength: Long
+	): this(stream.toByteArray(), contentType, contentLength)
 
 	override suspend fun writeTo(channel: ByteWriteChannel) {
 		assert(!channel.isClosedForWrite) {
 			val message = channel.closedCause?.message ?: "Unknown closed cause"
 			"Trying to write to channel when it is closed: $message"
 		}
-		while(channel.availableForWrite > 0) {
-			channel.writeAvailable(buffer)
-			if(!channel.autoFlush) {
-				channel.flush()
-			}
+		while(totalWritten < contentLength) {
+			val write: Int = (contentLength - totalWritten).coerceAtMost(1024).toInt()
+			val written: Int = channel.writeAvailable(buffer, totalWritten, write)//
+			totalWritten += written
+			log.trace { "Wrote $written of $contentLength bytes to channel" }
+			yield()
 		}
+		if(!channel.autoFlush) {
+			channel.flush()
+		}
+		channel.close()
 	}
 }
