@@ -100,13 +100,15 @@ class ContentPipe(
 	constructor(stream: ByteArrayOutputStream, contentType: ContentType): this(stream.toByteArray(), contentType)
 
 	override suspend fun writeTo(channel: ByteWriteChannel) {
-		if(!channel.isClosedForWrite) {
+		assert(!channel.isClosedForWrite) {
+			val message = channel.closedCause?.message ?: "Unknown closed cause"
+			"Trying to write to channel when it is closed: $message"
+		}
+		while(channel.availableForWrite > 0) {
 			channel.writeAvailable(buffer)
 			if(!channel.autoFlush) {
 				channel.flush()
 			}
-		} else {
-			log.error { "Unable to write to channel: ${channel.closedCause?.message ?: "channel closed"}" }
 		}
 	}
 }
