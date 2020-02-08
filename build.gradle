@@ -25,8 +25,8 @@ apply plugin: 'idea'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 
 group = 'com.mantono'
-version = '0.1.0'
-description = 'Project description'
+version = '0.2.0'
+description = 'Use Mustache templates in Ktor'
 
 defaultTasks 'test'
 
