@@ -114,7 +114,7 @@ class ContentPipe(
 		}
 		while(totalWritten < contentLength) {
 			val write: Int = (contentLength - totalWritten).coerceAtMost(1024).toInt()
-			val written: Int = channel.writeAvailable(buffer, totalWritten, write)//
+			val written: Int = channel.writeAvailable(buffer, totalWritten, write)
 			totalWritten += written
 			log.trace { "Wrote $written of $contentLength bytes to channel" }
 			yield()
