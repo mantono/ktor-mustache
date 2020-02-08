@@ -2,25 +2,20 @@ package com.mantono.ktor.mustache
 
 import com.github.mustachejava.DefaultMustacheFactory
 import com.github.mustachejava.MustacheFactory
-import io.ktor.application.ApplicationCall
 import io.ktor.application.ApplicationCallPipeline
 import io.ktor.application.ApplicationFeature
 import io.ktor.http.ContentType
-import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.withCharset
 import io.ktor.response.ApplicationSendPipeline
 import io.ktor.util.AttributeKey
-import io.ktor.util.cio.use
-import io.ktor.util.pipeline.PipelineContext
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeAvailable
 import mu.KotlinLogging
+import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.OutputStream
 import java.io.OutputStreamWriter
-import java.io.Writer
 
 private val log = KotlinLogging.logger(Mustache::class.qualifiedName.toString())
 
@@ -38,7 +33,7 @@ class Mustache(configuration: Configuration) {
 				field = value
 			}
 
-		var bufferSize: Int = 64
+		var bufferSize: Int = 128
 			set(value)
 			{
 				require(value > 0) {
@@ -72,29 +67,16 @@ class Mustache(configuration: Configuration) {
 			configuration: Configuration,
 			feature: Mustache
 		): OutgoingContent {
+			val compiledFile: com.github.mustachejava.Mustache = feature.mustacheFactory.compile(content.file)
+				?: error("Unable to compile file ${content.file}")
 
-			ByteArrayOutputStream(configuration.bufferSize).use { bytesStream ->
-				val writer: Writer = OutputStreamWriter(bytesStream)
-				val compiledFile: com.github.mustachejava.Mustache = feature.mustacheFactory.compile(content.file)
-					?: error("Unable to compile file ${content.file}")
-				compiledFile.execute(writer, content.vars).flush()
+			val byteStream = ByteArrayOutputStream(configuration.bufferSize)
+			val stream = BufferedOutputStream(byteStream)
+			val writer = OutputStreamWriter(stream)
+			compiledFile.execute(writer, content.vars)
+			writer.flush()
 
-				return object : OutgoingContent.WriteChannelContent() {
-					override val contentType: ContentType = content.contentType ?: configuration.defaultContentType
-					override suspend fun writeTo(channel: ByteWriteChannel) {
-						if(!channel.isClosedForWrite) {
-							channel.writeAvailable(bytesStream.toByteArray())
-							if(!channel.autoFlush) {
-								channel.flush()
-							}
-						} else {
-							log.error { "Unable to write to channel: ${channel.closedCause?.message ?: "channel closed"}" }
-						}
-					}
-
-					override val contentLength: Long = bytesStream.toByteArray().size.toLong()
-				}
-			}
+			return ContentPipe(byteStream, configuration.defaultContentType)
 		}
 
 		private fun log(configuration: Configuration) {
@@ -106,6 +88,25 @@ class Mustache(configuration: Configuration) {
 			} else {
 				log.info { "Found templates: ${found.joinToString(separator = "\n") { it.canonicalPath }}" }
 			}
+		}
+	}
+}
+
+class ContentPipe(
+	private val buffer: ByteArray,
+	override val contentType: ContentType
+): OutgoingContent.WriteChannelContent() {
+
+	constructor(stream: ByteArrayOutputStream, contentType: ContentType): this(stream.toByteArray(), contentType)
+
+	override suspend fun writeTo(channel: ByteWriteChannel) {
+		if(!channel.isClosedForWrite) {
+			channel.writeAvailable(buffer)
+			if(!channel.autoFlush) {
+				channel.flush()
+			}
+		} else {
+			log.error { "Unable to write to channel: ${channel.closedCause?.message ?: "channel closed"}" }
 		}
 	}
 }
