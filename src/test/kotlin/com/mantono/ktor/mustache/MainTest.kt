@@ -11,7 +11,9 @@ import java.io.File
 fun main(args: Array<String>) {
 	embeddedServer(Netty, 1234) {
 		install(Mustache) {
+			this.bufferSize = 512
 			this.resources = File("src/main/resources/templates")
+			this.defaultValues = mapOf("title" to "My Website")
 		}
 		routing {
 			get("/{user}") {

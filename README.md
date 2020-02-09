@@ -10,6 +10,8 @@ routing {
         // Set location for where templates are stored
         this.resources = File("src/main/resources/templates")
         this.bufferSize = 64
+        // Default values that is sent with all templates, unless overridden on specific routes
+        this.defaultValues = emptyMap()
     }
     get("/") {
         // Use file test.mustache ('.mustache' can be omitted)

@@ -44,6 +44,8 @@ class Mustache(configuration: Configuration) {
 			}
 
 		var defaultContentType: ContentType = ContentType.Text.Html.withCharset(Charsets.UTF_8)
+
+		var defaultValues: Map<String, Any?> = emptyMap()
 	}
 
 	companion object Feature : ApplicationFeature<ApplicationCallPipeline, Mustache.Configuration, Mustache> {
@@ -74,7 +76,8 @@ class Mustache(configuration: Configuration) {
 			val byteStream = ByteArrayOutputStream(configuration.bufferSize)
 			val stream = BufferedOutputStream(byteStream, configuration.bufferSize)
 			val writer = OutputStreamWriter(stream)
-			compiledFile.execute(writer, content.vars)
+			val scopes: Map<String, Any?> = configuration.defaultValues + content.vars
+			compiledFile.execute(writer, scopes)
 			writer.flush()
 			val contentLength: Long = byteStream.size().toLong()
 
